@@ -8,15 +8,20 @@
 #include <esp_event_loop.h>
 #include <esp_log.h>
 #include "camera_config.h"
+#include "esp_mac.h"
 
+#define EXAMPLE_ESP_WIFI_SSID      "Pathfinder"
+#define EXAMPLE_ESP_WIFI_PASS      "pathfinder"
+#define EXAMPLE_ESP_WIFI_CHANNEL   1
+#define EXAMPLE_MAX_STA_CONN       5
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
 static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-#define WIFI_CONFIG_SSID ""
-#define WIFI_CONFIG_PASSWORD ""
+#define WIFI_CONFIG_SSID "feever"
+#define WIFI_CONFIG_PASSWORD "reveef"
 
 esp_err_t stream_handler(httpd_req_t *req){
     camera_fb_t * fb = NULL;
@@ -117,6 +122,24 @@ esp_err_t capture_handler(httpd_req_t *req){
     return res;
 }
 
+// https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_http_server.html
+esp_err_t get_matrix_handler(httpd_req_t *req) {
+    char content[100];
+
+    size_t recv_size = req->content_len;
+
+    int ret = httpd_req_recv(req, content, recv_size);
+
+    if (ret > 0) {  /* 0 return value indicates connection closed */
+        printf("Matrix data: %s\n", content);
+        return ESP_OK;
+    }
+    else {
+        return ESP_FAIL;
+    }
+
+}
+
 
 httpd_uri_t stream_uri = {
     .uri = "/stream",
@@ -130,6 +153,12 @@ httpd_uri_t capture_uri = {
     .handler = capture_handler
     };
 
+httpd_uri_t post_uri = {
+    .uri = "/",
+    .method = HTTP_POST,
+    .handler = get_matrix_handler
+};
+
 httpd_handle_t start_webserver(void) {
   httpd_handle_t server = NULL;
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -142,6 +171,7 @@ httpd_handle_t start_webserver(void) {
     ESP_LOGI("TEST", "Registering URI handlers");
     httpd_register_uri_handler(server, &stream_uri);
     httpd_register_uri_handler(server, &capture_uri);
+    httpd_register_uri_handler(server, &post_uri);
     return server;
   }
 
@@ -149,55 +179,59 @@ httpd_handle_t start_webserver(void) {
   return NULL;
 }
 
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                    int32_t event_id, void* event_data)
+{
+    httpd_handle_t *server = (httpd_handle_t *)arg;
 
-static esp_err_t event_handler(void *ctx, system_event_t *event) {
-
-    httpd_handle_t *server = (httpd_handle_t *)ctx;
-
-    switch (event->event_id) {
-        case SYSTEM_EVENT_STA_START:
-            ESP_LOGI("TEST", "SYSTEM_EVENT_STA_START");
-            ESP_ERROR_CHECK(esp_wifi_connect());
-            break;
-        case SYSTEM_EVENT_STA_GOT_IP:
-            ESP_LOGI("TEST", "SYSTEM_EVENT_STA_GOT_IP");
-            ESP_LOGI("TEST", "Got IP: '%s'", ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-
-            /* Start the web server */
-            if (*server == NULL) {
-                *server = start_webserver();
-            }
-            break;
-        case SYSTEM_EVENT_STA_DISCONNECTED:
-            ESP_LOGI("TEST", "SYSTEM_EVENT_STA_DISCONNECTED");
-            ESP_ERROR_CHECK(esp_wifi_connect());
-
-            /* Stop the web server */
-            if (*server)
-            {
-                httpd_stop(server);
-                *server = NULL;
-            }
-            break;
-        default:
-            break;
+    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
+        ESP_LOGI("TAG", "station "MACSTR" join, AID=%d",
+                 MAC2STR(event->mac), event->aid);
+        *server = start_webserver();
+        
+    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
+        ESP_LOGI("TAG", "station "MACSTR" leave, AID=%d",
+                 MAC2STR(event->mac), event->aid);
+        /* Stop the web server */
+        if (*server)
+        {
+            httpd_stop(server);
+            *server = NULL;
+        }
     }
-    return ESP_OK;
 }
 
 void initialise_wifi(void *arg) {
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, arg));
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_ap();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        arg,
+                                                        NULL));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = WIFI_CONFIG_SSID,
-            .password = WIFI_CONFIG_PASSWORD,
+     wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = EXAMPLE_ESP_WIFI_SSID,
+            .ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID),
+            .channel = EXAMPLE_ESP_WIFI_CHANNEL,
+            .password = EXAMPLE_ESP_WIFI_PASS,
+            .max_connection = EXAMPLE_MAX_STA_CONN,
+            .authmode = WIFI_AUTH_WPA_WPA2_PSK
         },
     };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    if (strlen(WIFI_CONFIG_PASSWORD) == 0) {
+        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
 }
