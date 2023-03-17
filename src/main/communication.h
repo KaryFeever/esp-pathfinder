@@ -9,5 +9,6 @@
 #include <esp_event.h>
 #include <esp_log.h>
 
-
+char *camera_matrix;
 void initialise_wifi(void *arg);
+bool communicationFinished();

@@ -13,6 +13,7 @@ class App:
         # self.video_source=video_source
         self.window.geometry("1280x780")
         self.matrix = []
+        self.distCoeffs = []
 
         # self.window.configure(background="white")
         label1 = tkinter.Label(self.window, text = "Camera calibration", font=("Arial", 42))
@@ -40,9 +41,12 @@ class App:
         btn2.grid(row=1, column=0, sticky=tkinter.E, padx= (20,0), pady=(20,0))
         btn3.grid(row=2, column=0, sticky=tkinter.E, padx= (20,0), pady=(20,0))
 
-        self.delay = 15
+        self.delay = 1
         self.update()    
         self.window.mainloop()
+    
+    def Close(self):
+        self.window.destroy()
 
     def update(self):
         # Get a frame from the video source
@@ -63,13 +67,22 @@ class App:
             self.label4.config(text="Photos taken: " + str(self.img_cnt))
     
     def count_matrix(self):
-        self.matrix = calibration.countMatrix()
+        self.matrix, self.distCoeffs = calibration.countMatrix()
         print(self.matrix)
+        print(self.distCoeffs)
     
     def save_matrix(self):
-        self.stream.__del__
+        del self.stream
         matrix_string = str(self.matrix[0,0]) + ";" + str(self.matrix[0,1]) + ";" + str(self.matrix[0,2]) + ";" + \
                         str(self.matrix[1,0]) + ";" + str(self.matrix[1,1]) + ";" + str(self.matrix[1,2]) + ";" + \
-                        str(self.matrix[2,0]) + ";" + str(self.matrix[2,1]) + ";" + str(self.matrix[2,2])
-        requests.post("http://192.168.4.1", data=matrix_string)
+                        str(self.matrix[2,0]) + ";" + str(self.matrix[2,1]) + ";" + str(self.matrix[2,2]) + "|" + \
+                        str(self.distCoeffs[0][0]) + ";" + str(self.distCoeffs[0][1]) + ";" + str(self.distCoeffs[0][2]) + ";" + \
+                        str(self.distCoeffs[0][3]) + ";" + str(self.distCoeffs[0][4])
+        
+        try:
+            requests.post("http://192.168.4.1", data=matrix_string, timeout=2.0)
+        except requests.exceptions.Timeout:
+            pass
+        self.Close()
+        
 

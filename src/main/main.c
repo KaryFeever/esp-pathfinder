@@ -9,6 +9,7 @@
 
 #include "camera_config.h"
 #include "communication.h"
+#include "processing_unit.h"
 
 void app_main(void)
 {
@@ -16,31 +17,7 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     init_camera();
     initialise_wifi(&server);
+    // wait when communication will be closed
+    while(!communicationFinished()){}
+    init_processing_unit(camera_matrix);
 }
-
-// #include "button.h"
-// #include "callibration.h"
-
-// static QueueHandle_t xQueueButtonState = NULL;
-// static QueueHandle_t xQueueHandler = NULL;
-
-
-
-
-
-// void app_main(void) {
-//     // gpio_config_t gpio_conf;
-//     // gpio_conf.mode = GPIO_MODE_OUTPUT_OD;
-//     // gpio_conf.intr_type = GPIO_INTR_DISABLE;
-//     // gpio_conf.pin_bit_mask = 1LL << GPIO_NUM_3;
-//     // gpio_config(&gpio_conf);
-
-//     // xQueueButtonState = xQueueCreate(1, sizeof(int));
-//     // xQueueHandler = xQueueCreate(1, sizeof(int));
-
-//     // register_button(xQueueButtonState);
-//     // register_handler(xQueueButtonState, xQueueHandler);
-
-// }
-
-

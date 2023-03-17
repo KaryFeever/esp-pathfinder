@@ -23,14 +23,14 @@ def countMatrix():
             objpoints.append(objp)
             corners2 = cv.cornerSubPix(gray,corners, (11,11), (-1,-1), criteria)
             imgpoints.append(corners2)
-            # Draw and display the corners
-            cv.drawChessboardCorners(img, (9,6), corners2, ret)
-            cv.imshow('img', img)
-            cv.waitKey(500)
-    cv.destroyAllWindows()
+    #         # Draw and display the corners
+    #         cv.drawChessboardCorners(img, (9,6), corners2, ret)
+    #         cv.imshow('img', img)
+    #         cv.waitKey(500)
+    # cv.destroyAllWindows()
 
     ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
-    h, w = cv.imread(images[0]).shape[:2]
-    newcameramtx, roi = cv.getOptimalNewCameraMatrix(mtx, dist, (w,h), 1, (w,h))
-    return newcameramtx
+    # h, w = cv.imread(images[0]).shape[:2]
+    # newcameramtx, roi = cv.getOptimalNewCameraMatrix(mtx, dist, (w,h), 1, (w,h))
+    return mtx, dist

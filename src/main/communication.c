@@ -9,19 +9,23 @@
 #include <esp_log.h>
 #include "camera_config.h"
 #include "esp_mac.h"
+#include "processing_unit.h"
+#include "communication.h"
 
 #define EXAMPLE_ESP_WIFI_SSID      "Pathfinder"
 #define EXAMPLE_ESP_WIFI_PASS      "pathfinder"
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
-#define EXAMPLE_MAX_STA_CONN       5
+#define EXAMPLE_MAX_CONN       5
+
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
 static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-#define WIFI_CONFIG_SSID "feever"
-#define WIFI_CONFIG_PASSWORD "reveef"
+bool calibrationFinished = false;
+
+void stop_communication(httpd_handle_t server);
 
 esp_err_t stream_handler(httpd_req_t *req){
     camera_fb_t * fb = NULL;
@@ -124,22 +128,20 @@ esp_err_t capture_handler(httpd_req_t *req){
 
 // https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_http_server.html
 esp_err_t get_matrix_handler(httpd_req_t *req) {
-    char content[100];
-
     size_t recv_size = req->content_len;
+    camera_matrix = malloc(sizeof(char) * recv_size);
 
-    int ret = httpd_req_recv(req, content, recv_size);
+    int ret = httpd_req_recv(req, camera_matrix, recv_size);
 
-    if (ret > 0) {  /* 0 return value indicates connection closed */
-        printf("Matrix data: %s\n", content);
+    if (ret > 0) {
+        printf("Matrix data: %s\n", camera_matrix);
+        
+        stop_communication(req->handle);
         return ESP_OK;
-    }
-    else {
+    } else {
         return ESP_FAIL;
     }
-
 }
-
 
 httpd_uri_t stream_uri = {
     .uri = "/stream",
@@ -158,6 +160,20 @@ httpd_uri_t post_uri = {
     .method = HTTP_POST,
     .handler = get_matrix_handler
 };
+
+bool communicationFinished() {
+    return calibrationFinished;
+}
+
+void stop_communication(httpd_handle_t server) {
+    calibrationFinished = true;
+    httpd_unregister_uri_handler(server, "/stream", HTTP_GET);
+    httpd_unregister_uri_handler(server, "/capture", HTTP_GET);
+    httpd_unregister_uri_handler(server, "/", HTTP_POST);
+    httpd_stop(server);
+    esp_wifi_stop();
+    esp_wifi_deinit();
+}
 
 httpd_handle_t start_webserver(void) {
   httpd_handle_t server = NULL;
@@ -222,11 +238,11 @@ void initialise_wifi(void *arg) {
             .ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID),
             .channel = EXAMPLE_ESP_WIFI_CHANNEL,
             .password = EXAMPLE_ESP_WIFI_PASS,
-            .max_connection = EXAMPLE_MAX_STA_CONN,
+            .max_connection = EXAMPLE_MAX_CONN,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK
         },
     };
-    if (strlen(WIFI_CONFIG_PASSWORD) == 0) {
+    if (strlen(EXAMPLE_ESP_WIFI_PASS) == 0) {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
